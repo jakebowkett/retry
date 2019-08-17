@@ -15,8 +15,8 @@ can fail with exponential backoff and jittering.
 	func main() {
 
 		d, err := retry.New(shouldRetry, retry.Options{
-			Attempts: 5,
-			Base: 10,
+			Attempts: 3,
+			Base: 20,
 			Cap: 1000,
 			Exponent: 1.5,
 			Jitter: 0.5,
@@ -25,21 +25,39 @@ can fail with exponential backoff and jittering.
 			panic(err)
 		}
 
-		attempts, err := d.Do(func() error {
+		errs, err := d.Do(func() error {
+
+			// We use a random number here to simulate
+			// occasional failures. Purely for demonstration.
 			f := rand.Float64()
-			if f < 0.33 {
+
+			// This error will cause Do to stop
+			// early because shouldRetry returns
+			// false upon receiving it.
+			if f < 0.2 {
 				return errBye
 			}
-			if f < 0.66 {
-				return errHi
+
+			// Returning nil will always cause Do to
+			// stop retrying as it indicates the
+			// operation was completed successfully.
+			if f < 0.5 {
+				return nil
 			}
-			return nil
+
+			// Since shouldRetry doesn't test for
+			// other errors, errHi will not cause
+			// Do to stop retrying.
+			return errHi
 		})
+		for i, err := range errs {
+			fmt.Printf("err on attempt %d: %s\n", i+1, err.Error())
+		}
 		if err != nil {
-			fmt.Printf("after %d attempts: %s", attempts, err.Error())
+			fmt.Printf("%s after attempt %d\n", err.Error(), len(errs))
 			return
 		}
-		fmt.Printf("succeeded after %d attempts", attempts)
+		fmt.Printf("succeeded on attempt %d\n", len(errs)+1)
 	}
 
 */
@@ -178,15 +196,21 @@ func New(retry Retry, o Options) (*Doer, error) {
 }
 
 /*
-	Do calls fn repeatedly until it either succeeds, returns an error
-	that Retry decides is permanent, or until it has called fn up to the
-	maximum number of attempts specified in the Options passed to New.
+	Do calls fn repeatedly until it succeeds, or until fn returns an error
+	that the Retry function passed to New decides is permanent, or until
+	fn has been called up to the maximum number of attempts specified in
+	the Options passed to New.
 
 	Do returns the number of times it attempted to call fn, a slice of errors
 	from calls to fn in the order they occured, and an overall error from Do
-	indicating whether it was cancelled or reached the maximum attempts.
+	indicating whether it was cancelled, reached the maximum attempts, or nil
+	if it succeeded.
+
+	The number of attempts for a failed operation (i.e., when err is not nil)
+	is always len(errs) while the number of attempts for a successful operation
+	(where err is nil) is always len(errs)+1.
 */
-func (d Doer) Do(fn func() error) (attempts int, errs []error, err error) {
+func (d Doer) Do(fn func() error) (errs []error, err error) {
 
 	rand.Seed(time.Now().Unix())
 
@@ -196,13 +220,12 @@ func (d Doer) Do(fn func() error) (attempts int, errs []error, err error) {
 
 		err := fn()
 		if err == nil {
-			return attempt + 1, errs, nil
+			return errs, nil
 		}
 		errs = append(errs, err)
 
 		if d.retry != nil && !d.retry(err) {
-			attempt++
-			return attempt, errs, ErrCancelled
+			return errs, ErrCancelled
 		}
 
 		sleep := d.base * math.Pow(d.exponent, float64(attempt))
@@ -214,5 +237,5 @@ func (d Doer) Do(fn func() error) (attempts int, errs []error, err error) {
 		time.Sleep(time.Millisecond * time.Duration(sleep))
 	}
 
-	return attempt, errs, ErrMaxAttempts
+	return errs, ErrMaxAttempts
 }
