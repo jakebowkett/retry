@@ -238,8 +238,10 @@ func New(retry Retry, o Options) (*Doer, error) {
 }
 
 /*
-
- */
+	Operation is a function passed to a Doer's Do method. It will be executed
+	repeatedly until it returns nil or until it returns an error that Retry
+	decides is permanent.
+*/
 type Operation func() error
 
 /*
