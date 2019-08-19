@@ -18,8 +18,6 @@ func main() {
         log.Fatalln(err)
     }
 
-    rand.Seed(time.Now().UnixNano())
-
     // This will fail after 3 attempts.
     _, err = d.Do(func() error {
         return errors.New("error")
