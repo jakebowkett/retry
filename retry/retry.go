@@ -2,46 +2,10 @@
 Package retry provides a simple way to retry operations that can
 fail, using exponential backoff and jittering between attempts.
 
-	var errHi = errors.New("hi")
-	var errBye = errors.New("bye")
-
-	func shouldRetry(err error) bool {
-		if err == errBye {
-			return false
-		}
-		return true
-	}
-
-	func funcToRetry() error {
-
-		// We use a random number here to simulate
-		// different conditions. Purely for demonstration.
-		f := rand.Float64()
-
-		// This error will cause Do to stop
-		// early as shouldRetry returns false
-		// when it receives it.
-		if f < 0.2 {
-			return errBye
-		}
-
-		// Returning nil will always cause Do to
-		// stop retrying as it indicates the
-		// operation was completed successfully.
-		if f < 0.4 {
-			return nil
-		}
-
-		// Since shouldRetry doesn't test for
-		// other errors, errHi will not cause
-		// Do to stop retrying.
-		return errHi
-	}
-
 	func main() {
 
 		d, err := retry.New(shouldRetry, retry.Options{
-			Attempts:    5,
+			Attempts:    3,
 			Base:        time.Millisecond * 50,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Second * 2,
@@ -52,17 +16,43 @@ fail, using exponential backoff and jittering between attempts.
 			log.Fatalln(err)
 		}
 
-		rand.Seed(time.Now().UnixNano())
+		// This will fail after 3 attempts.
+		_, err = d.Do(func() error {
+			return errors.New("error")
+		})
+		log.Println(err.Error())
 
-		errs, err := d.Do(funcToRetry)
-		for i, err := range errs {
-			fmt.Printf("err on attempt %d: %s\n", i+1, err.Error())
+		// This will fail after the first attempt
+		// because shouldRetry signals we should
+		// abort upon receiving errPermanent.
+		_, err = d.Do(func() error {
+			return errPermanent
+		})
+
+		// This will succeed on the third attempt.
+		attempt := 0
+		_, _ = d.Do(func() error {
+			attempt++
+			if attempt == 3 {
+				return nil
+			}
+			return errors.New("error")
+		})
+		log.Printf("operation succeeded on attempt %d", attempt)
+	}
+
+	var errPermanent = errors.New("permanent")
+
+	func shouldRetry(err error) bool {
+
+		// We should not retry the operation
+		// after receiving an errPermanent.
+		if err == errPermanent {
+			return false
 		}
-		if err != nil {
-			fmt.Printf("%s after attempt %d\n", err.Error(), len(errs))
-			return
-		}
-		fmt.Printf("succeeded on attempt %d\n", len(errs)+1)
+
+		// For all other errors we retry.
+		return true
 	}
 
 */
