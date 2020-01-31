@@ -4,8 +4,8 @@ fail, using exponential backoff and jittering between attempts.
 
 	func main() {
 
-		d, err := retry.New(shouldRetry, retry.Options{
-			Attempts:    3,
+		r, err := retry.New(shouldRetry, retry.Options{
+			Retries:     3,
 			Base:        time.Millisecond * 50,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Second * 2,
@@ -17,7 +17,7 @@ fail, using exponential backoff and jittering between attempts.
 		}
 
 		// This will fail after 3 attempts.
-		_, err = d.Do(func() error {
+		_, err = r.Try(func() error {
 			return errors.New("error")
 		})
 		log.Println(err.Error())
@@ -25,13 +25,13 @@ fail, using exponential backoff and jittering between attempts.
 		// This will fail after the first attempt
 		// because shouldRetry signals we should
 		// abort upon receiving errPermanent.
-		_, err = d.Do(func() error {
+		_, err = r.Try(func() error {
 			return errPermanent
 		})
 
 		// This will succeed on the third attempt.
 		attempt := 0
-		_, _ = d.Do(func() error {
+		_, _ = r.Try(func() error {
 			attempt++
 			if attempt == 3 {
 				return nil
@@ -68,64 +68,64 @@ import (
 )
 
 /*
-	ErrMaxAttempts is returned from Do when it could not complete
+	ErrMaxAttempts is returned from Try when it could not complete
 	its operation and has tried the maximum allowed times.
 */
 var ErrMaxAttempts = errors.New("reached maximum attempts")
 
 /*
-	ErrCancelled is returned from Do when the operation it is
+	ErrCancelled is returned from Try when the operation it is
 	attempting returns an error indicating that no further
 	attempts should occur. See Retry for more information.
 */
 var ErrCancelled = errors.New("further retries cancelled")
 
 /*
-	ErrTimeout is returned from Do when the total elapsed time
+	ErrTimeout is returned from Try when the total elapsed time
 	attempting the operation exceeds the maximum alloted wait
 	time specified by .MaxWait in Options.
 */
 var ErrTimeout = errors.New("couldn't complete operation in time")
 
 /*
-	errNoFunc is returned by Do when fn is nil - it's a global
+	errNoFunc is returned by Try when fn is nil - it's a global
 	to make testing easier.
 */
 var errNoFunc = errors.New("fn is nil")
 
 /*
 	Retry is a callback that receives errors returned by the fn parameter
-	of Do. Retry can test err for particular errors and return a bool
+	of Try. Retry can test err for particular errors and return a bool
 	indicating whether to continue trying the operation or abort. Retry
-	will only be called if there is an error - err is never nil.
+	will only be called if there is an error therefore err is never nil.
 */
-type Retry func(err error) (tryAgain bool)
+type Retry = func(err error) (tryAgain bool)
 
 type Options struct {
 	/*
-		Attempts is a value of 1 or greater that determines the maximum
-		number of times an operation will be retried. It is possible for
-		for this number of attempts to never be tried either due to the
-		successful execution of the operation or because the Retry
-		supplied to Do indicates no further attempts should occur.
+		Retries is a value of 0 or greater that determines the maximum
+		number of times an operation will be retried after the initial
+		attempt. It is possible this number of retries will never be
+		reached either due to the successful execution of the operation
+		or because the Retry supplied to Try indicates no further attempts
+		should occur.
 	*/
-	Attempts int
+	Retries int
 
 	/*
-		Base is a value greater than 0 that determines the initial delay
-		before retrying an operation.
+		Base determines the initial delay before retrying an operation.
 	*/
 	Base time.Duration
 
 	/*
 		MaxInterval is a value greater than or equal to Base that determines
-		the longest possible time Do will wait between calls.
+		the longest possible time Try will wait between calls.
 	*/
 	MaxInterval time.Duration
 
 	/*
 		MaxWait is a value greater than or equal to Base that determines the
-		maximum time Do will spend trying to successfully execute its operation.
+		maximum time Try will spend trying to successfully execute its operation.
 	*/
 	MaxWait time.Duration
 
@@ -157,14 +157,14 @@ type Options struct {
 
 /*
 	Exported only for documentation purposes. Use New to initialise a
-	new Doer.
+	new Tryer.
 */
-type Doer struct {
+type Tryer struct {
 	base        float64
 	maxInterval float64
 	exponent    float64
 	jitter      float64
-	attempts    int
+	retries     int
 	maxWait     time.Duration
 	seed        int64
 	seedMu      sync.Mutex
@@ -172,38 +172,14 @@ type Doer struct {
 }
 
 /*
-	New returns a Doer with Options o. The retry parameter is optional -
-	if it is nil Do will always retry fn when it fails, up to o.Attempts.
+	New returns a Tryer with Options o. The retry parameter is optional -
+	if it is nil Try will always retry fn when it fails, up to o.Retries.
 	See Retry for more information.
 
 	New returns an error if the fields in o contain invalid values. See
 	Options for information on what the valid ranges are for each field.
 */
-func New(retry Retry, o Options) (*Doer, error) {
-
-	if o.Attempts < 1 {
-		return nil, fmt.Errorf("expected an .Attempts value greater than 0, got %d", o.Attempts)
-	}
-
-	if o.Base <= 0 {
-		return nil, fmt.Errorf("expected .Base to be greater than 0, got %d", o.Base)
-	}
-
-	if o.MaxInterval < o.Base {
-		return nil, fmt.Errorf(
-			"expected .MaxInterval to be greater than .Base, got .MaxInterval %d and .Base %d",
-			o.MaxInterval,
-			o.Base,
-		)
-	}
-
-	if o.MaxWait < o.Base {
-		return nil, fmt.Errorf(
-			"expected .MaxWait to be greater than .Base, got .MaxWait %d and .Base %d",
-			o.MaxWait,
-			o.Base,
-		)
-	}
+func New(retry Retry, o Options) (*Tryer, error) {
 
 	if o.Exponent < 1 {
 		return nil, fmt.Errorf(
@@ -214,10 +190,10 @@ func New(retry Retry, o Options) (*Doer, error) {
 		return nil, fmt.Errorf("expected a .Jitter value between 0 and 1, got %.2f", o.Jitter)
 	}
 
-	return &Doer{
+	return &Tryer{
 		seed:        time.Now().UnixNano(),
 		seedMu:      sync.Mutex{},
-		attempts:    o.Attempts,
+		retries:     o.Retries,
 		base:        float64(o.Base),
 		maxInterval: float64(o.MaxInterval),
 		maxWait:     o.MaxWait,
@@ -228,26 +204,26 @@ func New(retry Retry, o Options) (*Doer, error) {
 }
 
 /*
-	Operation is a function passed to a Doer's Do method. It will be executed
+	Operation is a function passed to a Tryer's Try method. It will be executed
 	repeatedly until it returns nil or until it returns an error that Retry
 	decides is permanent.
 */
-type Operation func() error
+type Operation = func() error
 
 /*
-	Do calls fn repeatedly until it succeeds, or until fn returns an error
+	Try calls fn repeatedly until it succeeds, or until fn returns an error
 	that the Retry passed to New decides is permanent, or until fn has been
 	called up to the maximum number of attempts specified in the Options
 	passed to New.
 
-	Do returns a slice of errors from calls to fn in the order they occured,
-	and an overall error from Do.
+	Try returns a slice of errors from calls to fn in the order they occured,
+	and an overall error from Try.
 
 	The number of attempts for a failed operation (i.e., when err is not nil)
 	is always len(errs) while the number of attempts for a successful operation
 	(where err is nil) is always len(errs)+1.
 */
-func (d Doer) Do(fn Operation) (errs []error, err error) {
+func (t Tryer) Try(fn Operation) (errs []error, err error) {
 
 	if fn == nil {
 		return errs, errNoFunc
@@ -259,14 +235,14 @@ func (d Doer) Do(fn Operation) (errs []error, err error) {
 		the same seed their jitter will not distribute those calls,
 		which is the purpose of jitter to begin with.
 	*/
-	d.seedMu.Lock()
-	d.seed++
-	d.seedMu.Unlock()
-	r := rand.New(rand.NewSource(d.seed))
+	t.seedMu.Lock()
+	t.seed++
+	t.seedMu.Unlock()
+	r := rand.New(rand.NewSource(t.seed))
 
 	var total time.Duration
 
-	for attempt := 0; attempt < d.attempts; attempt++ {
+	for attempt := 0; attempt <= t.retries; attempt++ {
 
 		err := fn()
 		if err == nil {
@@ -274,18 +250,18 @@ func (d Doer) Do(fn Operation) (errs []error, err error) {
 		}
 		errs = append(errs, err)
 
-		if d.retry != nil && !d.retry(err) {
+		if t.retry != nil && !t.retry(err) {
 			return errs, ErrCancelled
 		}
 
-		sleep := d.base * math.Pow(d.exponent, float64(attempt))
+		sleep := t.base * math.Pow(t.exponent, float64(attempt))
 
-		sleep = math.Min(d.maxInterval, sleep)
+		sleep = math.Min(t.maxInterval, sleep)
 
-		sleep *= (1 - (r.Float64() * d.jitter))
+		sleep *= (1 - (r.Float64() * t.jitter))
 
 		total += time.Duration(sleep)
-		if total > d.maxWait {
+		if total > t.maxWait {
 			return errs, ErrTimeout
 		}
 

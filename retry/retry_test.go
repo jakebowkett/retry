@@ -107,25 +107,25 @@ func TestNew(t *testing.T) {
 				retry = "func(error) bool"
 			}
 			errStr := "nil"
-			doerStr := "Doer"
+			tryerStr := "Tryer"
 			if c.wantErr {
 				errStr = "error"
-				doerStr = "nil"
+				tryerStr = "nil"
 			}
 			gotStr := "nil"
 			if got != nil {
-				gotStr = "Doer"
+				gotStr = "Tryer"
 			}
 			t.Errorf(
 				"New(%s, %v)\n"+
 					"    return %s, %v\n"+
 					"    wanted %s, %s\n",
-				retry, c.opt, gotStr, err, doerStr, errStr)
+				retry, c.opt, gotStr, err, tryerStr, errStr)
 		}
 	}
 }
 
-func TestDo(t *testing.T) {
+func TestTry(t *testing.T) {
 
 	attempts := 0
 
@@ -140,7 +140,7 @@ func TestDo(t *testing.T) {
 		   Should return errors.
 		*/
 
-		// No fn passed to Do.
+		// No fn passed to Try.
 		{
 			errNoFunc,
 			false,
@@ -163,7 +163,7 @@ func TestDo(t *testing.T) {
 			},
 		},
 
-		// Do's fn always returns an error therefore
+		// Try's fn always returns an error therefore
 		// we should hit the maximum allowed attempts.
 		{
 			ErrMaxAttempts,
@@ -175,7 +175,7 @@ func TestDo(t *testing.T) {
 			},
 		},
 
-		// Do's fn always returns an error and the maximum
+		// Try's fn always returns an error and the maximum
 		// wait time is set just above the base therefore
 		// we should timeout after the first attempt.
 		{
@@ -192,7 +192,7 @@ func TestDo(t *testing.T) {
 		   Should not return err, possibly errs.
 		*/
 
-		// Do's fn immediately returns nil, signalling the
+		// Try's fn immediately returns nil, signalling the
 		// operation was successfully completed.
 		{
 			nil,
@@ -204,7 +204,7 @@ func TestDo(t *testing.T) {
 			},
 		},
 
-		// Do's fn returns errors until the third attempt,
+		// Try's fn returns errors until the third attempt,
 		// therefore we expect errs to be non-nil while err
 		// should be nil becasue the operation eventually
 		// succeeded.
@@ -225,7 +225,7 @@ func TestDo(t *testing.T) {
 
 	for _, c := range cases {
 
-		d, err := New(c.retry, Options{
+		tryer, err := New(c.retry, Options{
 			Attempts:    3,
 			Base:        time.Millisecond * 30,
 			MaxInterval: time.Second * 1,
@@ -234,11 +234,11 @@ func TestDo(t *testing.T) {
 			Jitter:      0.5,
 		})
 		if err != nil {
-			t.Error("Failed to initialise Doer while testing method Do:\n    ", err.Error())
+			t.Error("Failed to initialise Tryer while testing method Try:\n    ", err.Error())
 			return
 		}
 
-		if errs, err := d.Do(c.fn); c.wantErrs && errs == nil || err != c.wantErr {
+		if errs, err := tryer.Try(c.fn); c.wantErrs && errs == nil || err != c.wantErr {
 			fn := "nil"
 			if c.fn != nil {
 				fn = "func() error"
@@ -248,7 +248,7 @@ func TestDo(t *testing.T) {
 				errsStr = "[]error"
 			}
 			t.Errorf(
-				"d.Do(%s)\n"+
+				"Tryer.Try(%s)\n"+
 					"return %v, %v\n"+
 					"wanted %s, %v\n",
 				fn, errs, err, errsStr, c.wantErr)
