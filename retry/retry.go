@@ -68,10 +68,10 @@ import (
 )
 
 /*
-	ErrMaxAttempts is returned from Try when it could not complete
+	ErrMaxRetries is returned from Try when it could not complete
 	its operation and has tried the maximum allowed times.
 */
-var ErrMaxAttempts = errors.New("reached maximum attempts")
+var ErrMaxRetries = errors.New("reached maximum retries")
 
 /*
 	ErrCancelled is returned from Try when the operation it is
@@ -268,5 +268,5 @@ func (t Tryer) Try(fn Operation) (errs []error, err error) {
 		time.Sleep(time.Nanosecond * time.Duration(sleep))
 	}
 
-	return errs, ErrMaxAttempts
+	return errs, ErrMaxRetries
 }

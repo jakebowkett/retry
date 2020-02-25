@@ -21,45 +21,9 @@ func TestNew(t *testing.T) {
 		// No options.
 		{true, nil, Options{}},
 
-		// Attempts is 0.
-		{true, nil, Options{
-			Base:        time.Millisecond * 30,
-			MaxInterval: time.Second * 1,
-			MaxWait:     time.Second * 2,
-			Exponent:    2,
-			Jitter:      0.5,
-		}},
-
-		// Base is 0.
-		{true, nil, Options{
-			Attempts:    3,
-			MaxInterval: time.Second * 1,
-			MaxWait:     time.Second * 2,
-			Exponent:    2,
-			Jitter:      0.5,
-		}},
-
-		// Base is greater than MaxInterval.
-		{true, nil, Options{
-			Attempts: 3,
-			Base:     time.Millisecond * 30,
-			MaxWait:  time.Second * 2,
-			Exponent: 2,
-			Jitter:   0.5,
-		}},
-
-		// Base is greater than MaxWait.
-		{true, nil, Options{
-			Attempts:    3,
-			Base:        time.Millisecond * 30,
-			MaxInterval: time.Second * 1,
-			Exponent:    2,
-			Jitter:      0.5,
-		}},
-
 		// Exponent is less than 1.
 		{true, nil, Options{
-			Attempts:    3,
+			Retries:     3,
 			Base:        time.Millisecond * 30,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Second * 2,
@@ -69,7 +33,7 @@ func TestNew(t *testing.T) {
 
 		// Jitter is less than 0.
 		{true, nil, Options{
-			Attempts:    3,
+			Retries:     3,
 			Base:        time.Millisecond * 30,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Second * 2,
@@ -79,7 +43,7 @@ func TestNew(t *testing.T) {
 
 		// Jitter is greater than 1.
 		{true, nil, Options{
-			Attempts:    3,
+			Retries:     3,
 			Base:        time.Millisecond * 30,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Second * 2,
@@ -91,7 +55,7 @@ func TestNew(t *testing.T) {
 		   Should not return errors.
 		*/
 		{false, nil, Options{
-			Attempts:    3,
+			Retries:     3,
 			Base:        time.Millisecond * 30,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Second * 2,
@@ -166,7 +130,7 @@ func TestTry(t *testing.T) {
 		// Try's fn always returns an error therefore
 		// we should hit the maximum allowed attempts.
 		{
-			ErrMaxAttempts,
+			ErrMaxRetries,
 			false,
 			2000,
 			nil,
@@ -225,8 +189,10 @@ func TestTry(t *testing.T) {
 
 	for _, c := range cases {
 
+		attempts = 0
+
 		tryer, err := New(c.retry, Options{
-			Attempts:    3,
+			Retries:     3,
 			Base:        time.Millisecond * 30,
 			MaxInterval: time.Second * 1,
 			MaxWait:     time.Millisecond * time.Duration(c.maxWait),
